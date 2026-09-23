@@ -13,7 +13,7 @@ def load_jsonl(path: str | Path) -> list[dict[str, Any]]:
     file = Path(path)
     return [
         json.loads(line)
-        for line in file.read_text(encoding="utf-8").splitlines()
+        for line in file.read_text(encoding="utf-8-sig").splitlines()
         if line.strip()
     ]
 
@@ -109,3 +109,4 @@ def evaluate_dataset(
         "average": average_metrics(metric_rows),
         "cases": rows,
     }
+
