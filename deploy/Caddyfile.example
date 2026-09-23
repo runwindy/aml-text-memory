@@ -1,0 +1,7 @@
+﻿# Replace this with your free domain, for example:
+# aml-yourname.duckdns.org
+#
+# Caddy will automatically obtain and renew a Let's Encrypt certificate.
+your-domain.example.com {
+    reverse_proxy api:8000
+}

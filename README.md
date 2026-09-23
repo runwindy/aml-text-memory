@@ -318,3 +318,73 @@ AML_EMBEDDING_API_KEY=...
 - 评测数据只能用于本次评测，30 天内删除。
 - 提交后 API 至少保持 30 天公网稳定可访问。
 - Full 每赛道最多 2 次，配额非常宝贵。
+
+---
+
+## 8. 本地检索指标评测
+
+新增了本地评测模块：
+
+```text
+app/eval/metrics.py      # Hit@k / Recall@k / MRR / nDCG / EM / Token-F1
+app/eval/harness.py      # 添加会话 -> Search -> 计算指标
+scripts/eval_retrieval.py
+examples/sample_eval.jsonl
+```
+
+运行：
+
+```bash
+python scripts/eval_retrieval.py \
+  --base-url http://127.0.0.1:8000 \
+  --dataset examples/sample_eval.jsonl \
+  --top-k 20
+```
+
+公网带鉴权：
+
+```bash
+python scripts/eval_retrieval.py \
+  --base-url https://你的域名 \
+  --key 你的MemorySystemKey \
+  --dataset examples/sample_eval.jsonl
+```
+
+输出示例：
+
+```json
+{
+  "hit@1": 0.666,
+  "hit@5": 1.0,
+  "recall@5": 0.888,
+  "mrr": 0.75
+}
+```
+
+数据集格式：
+
+```json
+{
+  "id": "case-alice",
+  "user_id": "eval-alice",
+  "sessions": [
+    {
+      "session_id": "alice-s1",
+      "messages": [
+        {"role": "user", "content": "Alice lives in Shanghai and loves hiking."}
+      ]
+    }
+  ],
+  "question": "Where does Alice live and what does she like?",
+  "expected_keywords": ["Shanghai", "hiking"]
+}
+```
+
+用途：
+
+- 比较 chunk 策略
+- 比较 embedding 模型
+- 比较 BM25 / dense / hybrid
+- 比较 reranker
+- 比较事实抽取前后
+- 比较时间治理和冲突更新效果
