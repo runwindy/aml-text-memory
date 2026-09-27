@@ -12,6 +12,8 @@ def make_client(tmp_path, **overrides) -> TestClient:
         "auth_mode": "none",
         "embedding_provider": "hashing",
         "embedding_dim": 128,
+        "organizer_provider": "rule",
+        "decomposer_provider": "off",
     }
     values.update(overrides)
     settings = Settings(**values)
@@ -145,6 +147,8 @@ def test_structured_memory_extraction(tmp_path):
                 auth_mode="none",
                 embedding_provider="hashing",
                 embedding_dim=128,
+                organizer_provider="rule",
+                decomposer_provider="off",
             )
         )
     )
@@ -197,3 +201,49 @@ def test_structured_memory_extraction(tmp_path):
     assert "profile" in memory_types
     assert "fact" in memory_types
     assert "event" in memory_types or "preference" in memory_types
+
+def test_dialogue_window_extraction(tmp_path):
+    import sqlite3
+
+    from fastapi.testclient import TestClient
+
+    db_path = tmp_path / "window.db"
+    client = TestClient(
+        create_app(
+            Settings(
+                database_path=str(db_path),
+                auth_mode="none",
+                embedding_provider="hashing",
+                embedding_dim=128,
+                organizer_provider="rule",
+                decomposer_provider="off",
+                window_size=3,
+                window_overlap=1,
+            )
+        )
+    )
+    with client:
+        response = client.post(
+            "/add",
+            json={
+                "request_id": "window-request-1",
+                "messages": [
+                    {"role": "user", "content": f"message {index}", "timestamp": 1704067200000 + index * 1000}
+                    for index in range(1, 6)
+                ],
+                "user_id": "window-user",
+                "session_id": "window-session",
+            },
+        )
+        assert response.status_code == 200
+
+    connection = sqlite3.connect(db_path)
+    try:
+        count = connection.execute(
+            "SELECT COUNT(*) FROM memory_items WHERE memory_type = 'raw'"
+        ).fetchone()[0]
+    finally:
+        connection.close()
+
+    assert count == 2
+

@@ -15,7 +15,7 @@ from app.organizer.composite import CompositeExtractor
 from app.retrieval.embedding import build_embedding_provider
 from app.retrieval.multi_index import MultiIndexRetriever
 from app.retrieval.packer import EvidencePacker
-from app.retrieval.reranker import IdentityReranker
+from app.retrieval.reranker import LexicalReranker
 from app.services.add_service import AddService
 from app.services.container import AppServices
 from app.services.search_service import SearchService
@@ -28,7 +28,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     store = SQLiteMemoryStore(settings.database_file)
     embedder = build_embedding_provider(settings)
-    extractor = CompositeExtractor()
+    extractor = CompositeExtractor(settings)
     ingestion = IngestionPipeline(store=store, extractor=extractor, embedder=embedder)
 
     retriever = MultiIndexRetriever(
@@ -36,7 +36,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         embedder=embedder,
         candidate_k=settings.retrieval_candidate_k,
     )
-    reranker = IdentityReranker()
+    reranker = LexicalReranker()
     packer = EvidencePacker(settings)
 
     services = AppServices(
@@ -84,5 +84,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
 
 app = create_app()
+
 
 

@@ -8,13 +8,16 @@ from app.indexing.type_index import type_scores
 from app.memory.models import MemoryRecord
 from app.retrieval.conflict import apply_current_state_bias
 from app.retrieval.embedding import EmbeddingProvider
+from app.retrieval.graph_expander import expand_graph
 from app.retrieval.hybrid import MemoryHit, bm25_scores, cosine_similarity
 from app.retrieval.query_analyzer import QueryPlan
+from app.retrieval.query_keywords import extract_query_keywords
+from app.retrieval.structured_matcher import structured_scores
 from app.storage.base import MemoryStore
 
 
 class MultiIndexRetriever:
-    """Dense + BM25 + entity + time + memory-type retrieval."""
+    """Dense + BM25 + entity + time + type + structured + graph retrieval."""
 
     def __init__(
         self,
@@ -22,11 +25,13 @@ class MultiIndexRetriever:
         embedder: EmbeddingProvider,
         candidate_k: int = 500,
         rrf_k: int = 60,
+        graph_max_hops: int = 2,
     ) -> None:
         self.store = store
         self.embedder = embedder
         self.candidate_k = candidate_k
         self.rrf_k = rrf_k
+        self.graph_max_hops = graph_max_hops
 
     async def retrieve(
         self,
@@ -76,6 +81,21 @@ class MultiIndexRetriever:
         # Memory-type retrieval.
         kind_scores = type_scores(records, plan.query_text)
         add_ranking(kind_scores, 0.5)
+
+        # Keyword-driven structured retrieval.
+        keywords = extract_query_keywords(plan.query_text + "\n" + plan.retrieval_text)
+        structured = structured_scores(records, keywords)
+        add_ranking(structured, 0.9)
+
+        # Graph expansion from the current best seeds.
+        seed_ids = sorted(fused, key=lambda identifier: fused[identifier], reverse=True)[:10]
+        graph_scores = expand_graph(
+            records,
+            seed_ids,
+            keywords,
+            max_hops=self.graph_max_hops,
+        )
+        add_ranking(graph_scores, 0.8)
 
         if not fused:
             fused = {record.id: 0.0 for record in records[:limit]}

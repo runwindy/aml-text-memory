@@ -1,0 +1,39 @@
+{
+  "name": "locomo_refined_v4_decomposer_graph_top100",
+  "config": {
+    "dataset": "examples/locomo_refined_eval.jsonl",
+    "question_count": 1382,
+    "top_k": 100,
+    "candidate_k": 10000,
+    "embedding_provider": "openai",
+    "embedding_model": "text-embedding-v4",
+    "organizer": "gpt-4o-mini-decomposer",
+    "window_size": 3,
+    "window_overlap": 1,
+    "governance": "valid_from_valid_to",
+    "retrieval": "dense+bm25+entity+time+type+structured+graph",
+    "reranker": "lexical"
+  },
+  "metrics": {
+    "forbidden@1": 0.0,
+    "forbidden@10": 0.0,
+    "forbidden@100": 0.0,
+    "forbidden@20": 0.0,
+    "forbidden@5": 0.0,
+    "forbidden@50": 0.0,
+    "hit@1": 0.4392185238784371,
+    "hit@10": 0.7973950795947902,
+    "hit@100": 0.959479015918958,
+    "hit@20": 0.861794500723589,
+    "hit@5": 0.7214182344428365,
+    "hit@50": 0.9276410998552822,
+    "keyword_total": 1.422575976845152,
+    "mrr": 0.5656658870772134,
+    "recall@1": 0.40273879450477734,
+    "recall@10": 0.7432420808981678,
+    "recall@100": 0.9245066676224911,
+    "recall@20": 0.8069102269592427,
+    "recall@5": 0.6678730323723671,
+    "recall@50": 0.8795850078930193
+  }
+}

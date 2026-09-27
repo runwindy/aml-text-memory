@@ -44,6 +44,29 @@ class Settings(BaseSettings):
     embedding_dim: int = 256
     embedding_batch_size: int = 64
 
+    # Optional LLM memory organizer. Use gpt-4o-mini for open-source/academic
+    # compliance, or leave as "rule" for the deterministic local baseline.
+    organizer_provider: str = "rule"
+    organizer_model: str = "gpt-4o-mini"
+    organizer_api_base: str = ""
+    organizer_api_key: str = ""
+    organizer_max_tokens: int = 1024
+    organizer_timeout: float = 120.0
+
+    # Dialogue-window extraction.
+    window_size: int = 3
+    window_overlap: int = 1
+
+    # Optional complex-sentence decomposer.
+    # off: use existing Organizer; openai: use decomposition prompt.
+    decomposer_provider: str = "off"
+    decomposer_model: str = "gpt-4o-mini"
+    decomposer_api_base: str = ""
+    decomposer_api_key: str = ""
+    decomposer_max_tokens: int = 4096
+    decomposer_timeout: float = 120.0
+    decomposer_concurrency: int = 4
+
     # Retrieval controls.
     retrieval_candidate_k: int = 200
     retrieval_dense_k: int = 100

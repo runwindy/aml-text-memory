@@ -171,6 +171,65 @@ class SQLiteMemoryStore:
         finally:
             connection.close()
 
+    def _govern_temporal_memories_sync(
+        self,
+        connection: sqlite3.Connection,
+        user_id: str,
+    ) -> None:
+        """Maintain valid_from / valid_to for structured memories.
+
+        History is preserved. The newest record for a subject/predicate pair
+        becomes active; older records are marked superseded and get valid_to.
+        """
+
+        rows = connection.execute(
+            """
+            SELECT id, subject, predicate, timestamp, valid_from, memory_type
+            FROM memory_items
+            WHERE user_id = ?
+              AND subject IS NOT NULL
+              AND predicate IS NOT NULL
+              AND memory_type IN ('fact', 'profile', 'preference', 'event')
+            ORDER BY subject, predicate, timestamp DESC
+            """,
+            (user_id,),
+        ).fetchall()
+
+        groups: dict[tuple[str, str], list[sqlite3.Row]] = {}
+        for row in rows:
+            groups.setdefault((row["subject"], row["predicate"]), []).append(row)
+
+        for group in groups.values():
+            latest = group[0]
+            latest_valid_from = latest["valid_from"]
+            if not latest_valid_from and latest["timestamp"] is not None:
+                try:
+                    latest_valid_from = datetime.fromtimestamp(
+                        latest["timestamp"] / 1000,
+                        tz=timezone.utc,
+                    ).date().isoformat()
+                except (OverflowError, OSError, ValueError):
+                    latest_valid_from = None
+
+            for row in group[1:]:
+                connection.execute(
+                    """
+                    UPDATE memory_items
+                    SET valid_to = ?, status = 'superseded'
+                    WHERE id = ?
+                    """,
+                    (latest_valid_from, row["id"]),
+                )
+
+            connection.execute(
+                """
+                UPDATE memory_items
+                SET valid_to = NULL, status = 'active'
+                WHERE id = ?
+                """,
+                (latest["id"],),
+            )
+
     def _save_ingestion_sync(
         self,
         request: AddRequest,
@@ -318,6 +377,7 @@ class SQLiteMemoryStore:
                             for record in records
                         ],
                     )
+                self._govern_temporal_memories_sync(connection, request.user_id)
             return response
         except sqlite3.IntegrityError:
             existing = connection.execute(

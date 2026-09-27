@@ -1,0 +1,36 @@
+{
+  "name": "locomo_refined_hashing_rule_organizer_lexical_reranker_temporal_governance",
+  "config": {
+    "dataset": "examples/locomo_refined_eval.jsonl",
+    "question_count": 1382,
+    "top_k": 20,
+    "candidate_k": 10000,
+    "embedding_provider": "hashing",
+    "embedding_dim": 256,
+    "organizer": "rule-based-v1",
+    "reranker": "lexical",
+    "governance": "valid_from_valid_to"
+  },
+  "metrics": {
+    "forbidden@1": 0.0,
+    "forbidden@10": 0.0,
+    "forbidden@100": 0.0,
+    "forbidden@20": 0.0,
+    "forbidden@5": 0.0,
+    "forbidden@50": 0.0,
+    "hit@1": 0.2337192474674385,
+    "hit@10": 0.5043415340086831,
+    "hit@100": 0.5824891461649783,
+    "hit@20": 0.5824891461649783,
+    "hit@5": 0.4044862518089725,
+    "hit@50": 0.5824891461649783,
+    "keyword_total": 1.422575976845152,
+    "mrr": 0.3157147428904383,
+    "recall@1": 0.21368910806001126,
+    "recall@10": 0.45246522708405473,
+    "recall@100": 0.5219607821801887,
+    "recall@20": 0.5219607821801887,
+    "recall@5": 0.36850442058154664,
+    "recall@50": 0.5219607821801887
+  }
+}

@@ -1,0 +1,36 @@
+{
+  "name": "locomo_refined_v4_gpt4omini_organizer",
+  "config": {
+    "dataset": "examples/locomo_refined_eval.jsonl",
+    "question_count": 1382,
+    "top_k": 20,
+    "candidate_k": 10000,
+    "embedding_provider": "openai",
+    "embedding_model": "text-embedding-v4",
+    "organizer": "gpt-4o-mini",
+    "governance": "valid_from_valid_to",
+    "reranker": "lexical"
+  },
+  "metrics": {
+    "forbidden@1": 0.0,
+    "forbidden@10": 0.0,
+    "forbidden@100": 0.0,
+    "forbidden@20": 0.0,
+    "forbidden@5": 0.0,
+    "forbidden@50": 0.0,
+    "hit@1": 0.34008683068017365,
+    "hit@10": 0.6519536903039074,
+    "hit@100": 0.7510853835021708,
+    "hit@20": 0.7510853835021708,
+    "hit@5": 0.5882778581765558,
+    "hit@50": 0.7510853835021708,
+    "keyword_total": 1.422575976845152,
+    "mrr": 0.45088668289751543,
+    "recall@1": 0.30894321549169595,
+    "recall@10": 0.5873491082776321,
+    "recall@100": 0.686215160144338,
+    "recall@20": 0.686215160144338,
+    "recall@5": 0.529181673431045,
+    "recall@50": 0.686215160144338
+  }
+}

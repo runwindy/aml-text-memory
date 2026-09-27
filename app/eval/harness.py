@@ -61,6 +61,34 @@ def search_case(
     return response.json()["data"]
 
 
+def evaluate_question(
+    client: httpx.Client,
+    *,
+    user_id: str,
+    question: dict[str, Any],
+    top_k: int,
+) -> dict[str, Any]:
+    results = search_case(
+        client,
+        user_id=user_id,
+        question=str(question["question"]),
+        options=question.get("options"),
+        top_k=top_k,
+    )
+    retrieved_texts = [str(item.get("content", "")) for item in results]
+    metrics = evaluate_keyword_retrieval(
+        retrieved_texts,
+        question.get("expected_keywords", []),
+        forbidden_keywords=question.get("forbidden_keywords", []),
+    )
+    return {
+        "id": question["id"],
+        "question": question["question"],
+        "retrieved": results,
+        "metrics": metrics,
+    }
+
+
 def evaluate_case(
     client: httpx.Client,
     case: dict[str, Any],
@@ -73,25 +101,45 @@ def evaluate_case(
     for session in case.get("sessions", []):
         add_session(client, case_id=case_id, user_id=user_id, session=session)
 
-    results = search_case(
+    row = evaluate_question(
         client,
         user_id=user_id,
-        question=str(case["question"]),
-        options=case.get("options"),
+        question=case,
         top_k=top_k,
     )
-    retrieved_texts = [str(item.get("content", "")) for item in results]
-    metrics = evaluate_keyword_retrieval(
-        retrieved_texts,
-        case.get("expected_keywords", []),
-        forbidden_keywords=case.get("forbidden_keywords", []),
-    )
-    return {
-        "id": case_id,
-        "question": case["question"],
-        "retrieved": results,
-        "metrics": metrics,
-    }
+    row["group_id"] = case_id
+    return row
+
+
+def evaluate_group(
+    client: httpx.Client,
+    case: dict[str, Any],
+    *,
+    top_k: int,
+) -> list[dict[str, Any]]:
+    """Evaluate one conversation with many questions.
+
+    Sessions are added exactly once. This is the format used by long-conversation
+    benchmarks such as LoCoMo-Refined.
+    """
+
+    case_id = str(case["id"])
+    user_id = str(case["user_id"])
+
+    for session in case.get("sessions", []):
+        add_session(client, case_id=case_id, user_id=user_id, session=session)
+
+    rows: list[dict[str, Any]] = []
+    for question in case.get("questions", []):
+        row = evaluate_question(
+            client,
+            user_id=user_id,
+            question=question,
+            top_k=top_k,
+        )
+        row["group_id"] = case_id
+        rows.append(row)
+    return rows
 
 
 def evaluate_dataset(
@@ -102,10 +150,17 @@ def evaluate_dataset(
 ) -> dict[str, Any]:
     rows: list[dict[str, Any]] = []
     metric_rows: list[dict[str, float]] = []
+
     for case in cases:
-        row = evaluate_case(client, case, top_k=top_k)
-        rows.append(row)
-        metric_rows.append(row["metrics"])
+        if "questions" in case and "question" not in case:
+            case_rows = evaluate_group(client, case, top_k=top_k)
+        else:
+            case_rows = [evaluate_case(client, case, top_k=top_k)]
+
+        for row in case_rows:
+            rows.append(row)
+            metric_rows.append(row["metrics"])
+
     return {
         "average": average_metrics(metric_rows),
         "cases": rows,

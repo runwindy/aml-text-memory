@@ -37,7 +37,7 @@ _DISLIKE_PATTERNS = (
     re.compile(r"我不喜欢([^。\n]+)"),
 )
 _THIRD_PERSON_PREFERENCE_PATTERNS = (
-    (re.compile(r"\b([A-Z][A-Za-z'\-]+)\s+(?:likes|loves|prefers)\s+([^.,;\n]+)", re.IGNORECASE)),
+    (re.compile(r"\b([A-Z][A-Za-z'\-]+)\s+(?:likes|loves|prefers)\s+([^.,;\n]+)")),
     (re.compile(r"([\u4e00-\u9fff]{2,4})喜欢([^。\n]+)")),
 )
 _EVENT_PATTERNS = (
