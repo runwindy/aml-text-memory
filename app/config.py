@@ -57,6 +57,27 @@ class Settings(BaseSettings):
     window_size: int = 3
     window_overlap: int = 1
 
+    # Reranker.
+    reranker_provider: str = "lexical"  # lexical | bge
+    reranker_model: str = "BAAI/bge-reranker-v2-m3"
+    reranker_device: str = "cuda"
+    reranker_batch_size: int = 8
+    reranker_max_length: int = 512
+    reranker_candidates: int = 50
+
+    # Result window expansion.
+    result_window: int = 1
+    result_window_seed_k: int = 20
+
+    # Temporal and conflict policy.
+    temporal_enrichment: bool = False
+    conflict_mode: str = "versioned"  # basic | versioned
+
+    # Graph expansion.
+    graph_max_hops: int = 2
+    graph_beam: int = 10
+    graph_decay: float = 0.8
+
     # Optional complex-sentence decomposer.
     # off: use existing Organizer; openai: use decomposition prompt.
     decomposer_provider: str = "off"

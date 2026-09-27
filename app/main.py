@@ -15,7 +15,7 @@ from app.organizer.composite import CompositeExtractor
 from app.retrieval.embedding import build_embedding_provider
 from app.retrieval.multi_index import MultiIndexRetriever
 from app.retrieval.packer import EvidencePacker
-from app.retrieval.reranker import LexicalReranker
+from app.retrieval.reranker import build_reranker
 from app.services.add_service import AddService
 from app.services.container import AppServices
 from app.services.search_service import SearchService
@@ -36,7 +36,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         embedder=embedder,
         candidate_k=settings.retrieval_candidate_k,
     )
-    reranker = LexicalReranker()
+    reranker = build_reranker(settings)
     packer = EvidencePacker(settings)
 
     services = AppServices(
@@ -84,6 +84,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
 
 app = create_app()
+
+
 
 
 

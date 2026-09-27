@@ -1,14 +1,17 @@
 ﻿from __future__ import annotations
 
-import re
 from collections import defaultdict
 
 from app.memory.models import MemoryRecord
+from app.retrieval.temporal_resolver import parse_temporal_query
 
-_CURRENT_RE = re.compile(
-    r"\b(now|current|currently|today|latest|present)\b|现在|目前|当前|最新",
-    re.IGNORECASE,
-)
+
+def _is_historical(record: MemoryRecord) -> bool:
+    return record.status == "superseded" or record.valid_to is not None
+
+
+def _is_active(record: MemoryRecord) -> bool:
+    return record.status == "active" and record.valid_to is None
 
 
 def apply_current_state_bias(
@@ -16,30 +19,49 @@ def apply_current_state_bias(
     records_by_id: dict[str, MemoryRecord],
     query: str,
 ) -> dict[str, float]:
-    """Demote older records that share the same subject/predicate.
+    """Version-aware conflict policy.
 
-    This is retrieval-time conflict resolution: history is preserved, but
-    "current" questions prefer the newest version.
+    - "now/current" questions prefer active/latest versions.
+    - "before/past/used to" questions prefer historical versions.
+    - Other questions keep history and rely on the fusion ranker.
     """
 
-    if not _CURRENT_RE.search(query or ""):
+    temporal = parse_temporal_query(query)
+    if not temporal.current and not temporal.past:
         return scores
 
-    groups: dict[tuple[str, str], list[MemoryRecord]] = defaultdict(list)
-    for record in records_by_id.values():
-        if (
-            record.subject
-            and record.predicate
-            and record.memory_type in {"fact", "profile", "preference", "event"}
-        ):
-            groups[(record.subject, record.predicate)].append(record)
+    adjusted = dict(scores)
 
-    for group in groups.values():
-        latest = max((record.timestamp or 0) for record in group)
-        if latest <= 0:
-            continue
-        for record in group:
-            if record.timestamp is not None and record.timestamp < latest:
-                scores[record.id] = scores.get(record.id, 0.0) * 0.6
+    if temporal.current:
+        for record in records_by_id.values():
+            if _is_historical(record):
+                adjusted[record.id] = adjusted.get(record.id, 0.0) * 0.45
+            elif _is_active(record):
+                adjusted[record.id] = adjusted.get(record.id, 0.0) * 1.15
 
-    return scores
+        groups: dict[tuple[str, str], list[MemoryRecord]] = defaultdict(list)
+        for record in records_by_id.values():
+            if record.subject and record.predicate and record.memory_type in {
+                "fact",
+                "profile",
+                "preference",
+                "event",
+            }:
+                groups[(record.subject, record.predicate)].append(record)
+
+        for group in groups.values():
+            latest = max((record.timestamp or 0) for record in group)
+            if latest <= 0:
+                continue
+            for record in group:
+                if record.timestamp is not None and record.timestamp < latest:
+                    adjusted[record.id] = adjusted.get(record.id, 0.0) * 0.6
+
+    if temporal.past:
+        for record in records_by_id.values():
+            if _is_active(record):
+                adjusted[record.id] = adjusted.get(record.id, 0.0) * 0.55
+            elif _is_historical(record):
+                adjusted[record.id] = adjusted.get(record.id, 0.0) * 1.15
+
+    return adjusted
