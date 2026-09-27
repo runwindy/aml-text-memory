@@ -1,7 +1,7 @@
 ﻿from __future__ import annotations
 
 from app.config import Settings
-from app.retrieval.hybrid import HybridRetriever
+from app.retrieval.multi_index import MultiIndexRetriever
 from app.retrieval.packer import EvidencePacker
 from app.retrieval.query_analyzer import analyze_query
 from app.retrieval.reranker import Reranker
@@ -13,7 +13,7 @@ class SearchService:
         self,
         *,
         settings: Settings,
-        retriever: HybridRetriever,
+        retriever: MultiIndexRetriever,
         reranker: Reranker,
         packer: EvidencePacker,
     ) -> None:
@@ -34,3 +34,4 @@ class SearchService:
         hits = await self.reranker.rerank(plan.retrieval_text, hits)
         items = self.packer.pack(hits, request.top_k)
         return SearchResponse(data=items)
+

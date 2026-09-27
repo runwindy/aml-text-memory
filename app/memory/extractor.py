@@ -2,27 +2,20 @@
 
 import hashlib
 from datetime import datetime, timezone
-from typing import Protocol
+from typing import Protocol, Sequence
 
+from app.ingestion.models import CanonicalMessage
 from app.memory.models import MemoryRecord
-from app.schemas import AddMessage, AddRequest, ContentPart
+from app.schemas import AddRequest
 
 
 class MemoryExtractor(Protocol):
-    async def extract(self, request: AddRequest) -> list[MemoryRecord]:
+    async def extract(
+        self,
+        request: AddRequest,
+        messages: Sequence[CanonicalMessage],
+    ) -> list[MemoryRecord]:
         ...
-
-
-def content_to_text(content: str | list[ContentPart]) -> str:
-    if isinstance(content, str):
-        return content
-    parts: list[str] = []
-    for part in content:
-        if part.type == "text":
-            parts.append(part.text or "")
-        elif part.type == "image_url" and part.image_url is not None:
-            parts.append(f"[image:{part.image_url.url[:64]}]")
-    return "\n".join(parts)
 
 
 def format_timestamp(timestamp_ms: int | None) -> str:
@@ -40,49 +33,43 @@ def stable_memory_id(
     user_id: str,
     session_id: str,
     request_id: str,
-    index: int,
+    sequence_no: int,
     content: str,
 ) -> str:
-    raw = f"{user_id}\x1f{session_id}\x1f{request_id}\x1f{index}\x1f{content}"
+    raw = f"{user_id}\x1f{session_id}\x1f{request_id}\x1f{sequence_no}\x1f{content}"
     return hashlib.sha1(raw.encode("utf-8")).hexdigest()
 
 
-def render_message(message: AddMessage, index: int) -> str:
-    text = content_to_text(message.content)
-    timestamp = format_timestamp(message.timestamp)
-    prefix_parts = [f"[{message.role}]"]
-    if timestamp:
-        prefix_parts.insert(0, f"[{timestamp}]")
-    return " ".join(prefix_parts) + " " + text
-
-
 class PassThroughExtractor:
-    """Baseline extractor: one memory record per source message.
+    """Baseline extractor: one canonical message -> one memory record.
 
-    This is intentionally simple and deterministic. Replace it with an LLM or
-    rule-based extractor that returns atomic facts, events, preferences, and
-    summaries.
+    The record keeps the raw text for Answer, while metadata carries the
+    normalized retrieval text and ingestion flags.
     """
 
     def __init__(self, *, include_role: bool = True, include_timestamp: bool = True) -> None:
         self.include_role = include_role
         self.include_timestamp = include_timestamp
 
-    async def extract(self, request: AddRequest) -> list[MemoryRecord]:
+    async def extract(
+        self,
+        request: AddRequest,
+        messages: Sequence[CanonicalMessage],
+    ) -> list[MemoryRecord]:
         records: list[MemoryRecord] = []
-        for index, message in enumerate(request.messages):
-            text = content_to_text(message.content)
-            if not text.strip():
+
+        for index, message in enumerate(messages):
+            if not message.normalized_content:
                 continue
 
             content_parts: list[str] = []
-            if self.include_timestamp and message.timestamp is not None:
-                formatted = format_timestamp(message.timestamp)
+            if self.include_timestamp and message.timestamp_ms is not None:
+                formatted = format_timestamp(message.timestamp_ms)
                 if formatted:
                     content_parts.append(f"[{formatted}]")
             if self.include_role:
                 content_parts.append(f"[{message.role}]")
-            content_parts.append(text)
+            content_parts.append(message.raw_content)
             content = " ".join(content_parts)
 
             records.append(
@@ -91,7 +78,7 @@ class PassThroughExtractor:
                         user_id=request.user_id,
                         session_id=request.session_id,
                         request_id=request.request_id,
-                        index=index,
+                        sequence_no=message.sequence_no,
                         content=content,
                     ),
                     user_id=request.user_id,
@@ -99,15 +86,24 @@ class PassThroughExtractor:
                     request_id=request.request_id,
                     content=content,
                     memory_type="raw",
-                    timestamp=message.timestamp,
-                    created_at=datetime.now(timezone.utc).isoformat(),
-                    metadata={"source_index": index, "role": message.role},
+                    timestamp=message.timestamp_ms,
+                    created_at=message.created_at,
+                    metadata={
+                        "source_message_ids": [message.message_id],
+                        "normalized_content": message.normalized_content,
+                        "language": message.language,
+                        "time_granularity": message.time_granularity,
+                        "timestamp_inferred": message.timestamp_inferred,
+                        "pii_flags": message.pii_flags,
+                        "quality_flags": message.quality_flags,
+                        "safety_flags": message.safety_flags,
+                        "ingestion_version": message.ingestion_version,
+                    },
                 )
             )
+
         return records
 
 
 def build_extractor() -> PassThroughExtractor:
-    """Factory hook for future extractors."""
-
     return PassThroughExtractor()

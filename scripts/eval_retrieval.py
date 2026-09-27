@@ -37,7 +37,8 @@ def main() -> None:
             f"{row['id']}: "
             f"hit@5={metrics.get('hit@5', 0):.3f} "
             f"recall@5={metrics.get('recall@5', 0):.3f} "
-            f"mrr={metrics.get('mrr', 0):.3f}"
+            f"mrr={metrics.get('mrr', 0):.3f} "
+            f"forbidden@1={metrics.get('forbidden@1', 0):.3f}"
         )
 
 

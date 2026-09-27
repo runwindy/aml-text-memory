@@ -110,16 +110,13 @@ def evaluate_keyword_retrieval(
     retrieved_texts: Sequence[str],
     expected_keywords: Sequence[str],
     *,
+    forbidden_keywords: Sequence[str] = (),
     k_values: tuple[int, ...] = (1, 5, 10, 20, 50, 100),
 ) -> dict[str, float]:
-    """Evaluate retrieval when gold memory IDs are unknown.
-
-    A keyword is counted as found at rank r when any retrieved text at rank <= r
-    contains that keyword. This is intentionally permissive and is used as a
-    local proxy while benchmark gold labels are unavailable.
-    """
+    """Evaluate retrieval when gold memory IDs are unknown."""
 
     keywords = [keyword for keyword in expected_keywords if normalize_text(keyword)]
+    forbidden = [keyword for keyword in forbidden_keywords if normalize_text(keyword)]
     metrics: dict[str, float] = {
         "mrr": 0.0,
         "keyword_total": float(len(keywords)),
@@ -128,6 +125,7 @@ def evaluate_keyword_retrieval(
         for k in k_values:
             metrics[f"hit@{k}"] = 0.0
             metrics[f"recall@{k}"] = 0.0
+            metrics[f"forbidden@{k}"] = 0.0
         return metrics
 
     first_rank: int | None = None
@@ -140,8 +138,14 @@ def evaluate_keyword_retrieval(
     for k in k_values:
         prefix = retrieved_texts[:k]
         found = {keyword for keyword in keywords if any(keyword_in_text(text, keyword) for text in prefix)}
+        forbidden_found = any(
+            keyword_in_text(text, keyword)
+            for text in prefix
+            for keyword in forbidden
+        )
         metrics[f"hit@{k}"] = 1.0 if found else 0.0
         metrics[f"recall@{k}"] = len(found) / len(keywords)
+        metrics[f"forbidden@{k}"] = 1.0 if forbidden_found else 0.0
     return metrics
 
 

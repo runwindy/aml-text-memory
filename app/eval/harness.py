@@ -84,6 +84,7 @@ def evaluate_case(
     metrics = evaluate_keyword_retrieval(
         retrieved_texts,
         case.get("expected_keywords", []),
+        forbidden_keywords=case.get("forbidden_keywords", []),
     )
     return {
         "id": case_id,
@@ -109,4 +110,3 @@ def evaluate_dataset(
         "average": average_metrics(metric_rows),
         "cases": rows,
     }
-

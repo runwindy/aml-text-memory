@@ -7,13 +7,14 @@ from app.main import create_app
 
 
 def make_client(tmp_path, **overrides) -> TestClient:
-    settings = Settings(
-        database_path=str(tmp_path / "test.db"),
-        auth_mode="none",
-        embedding_provider="hashing",
-        embedding_dim=128,
-        **overrides,
-    )
+    values = {
+        "database_path": str(tmp_path / "test.db"),
+        "auth_mode": "none",
+        "embedding_provider": "hashing",
+        "embedding_dim": 128,
+    }
+    values.update(overrides)
+    settings = Settings(**values)
     return TestClient(create_app(settings))
 
 
@@ -109,3 +110,90 @@ def test_auth_required(tmp_path):
             headers={"Authorization": "Bearer secret"},
         )
         assert authorized.status_code == 200
+
+def test_request_id_conflict(tmp_path):
+    with make_client(tmp_path) as client:
+        base = {
+            "request_id": "conflict-request-1",
+            "messages": [{"role": "user", "content": "Alice likes tea."}],
+            "user_id": "user-conflict",
+            "session_id": "session-conflict",
+        }
+        first = client.post("/add", json=base)
+        assert first.status_code == 200
+
+        changed = {
+            "request_id": "conflict-request-1",
+            "messages": [{"role": "user", "content": "Alice likes coffee."}],
+            "user_id": "user-conflict",
+            "session_id": "session-conflict",
+        }
+        second = client.post("/add", json=changed)
+        assert second.status_code == 409
+        assert "different payload" in second.json()["detail"]["reason"]
+
+def test_structured_memory_extraction(tmp_path):
+    import sqlite3
+
+    from fastapi.testclient import TestClient
+
+    db_path = tmp_path / "structured.db"
+    client = TestClient(
+        create_app(
+            Settings(
+                database_path=str(db_path),
+                auth_mode="none",
+                embedding_provider="hashing",
+                embedding_dim=128,
+            )
+        )
+    )
+    with client:
+        response = client.post(
+            "/add",
+            json={
+                "request_id": "structured-request-1",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": "My name is Alice and I live in Shanghai.",
+                        "timestamp": 1704067200000,
+                    },
+                    {
+                        "role": "assistant",
+                        "content": "Alice likes tea.",
+                        "timestamp": 1704067260000,
+                    },
+                ],
+                "user_id": "structured-user",
+                "session_id": "structured-session",
+            },
+        )
+        assert response.status_code == 200
+
+        search = client.post(
+            "/search",
+            json={
+                "query": "Where does Alice live?",
+                "user_id": "structured-user",
+                "top_k": 10,
+            },
+        )
+        assert search.status_code == 200
+        assert search.json()["data"]
+
+    connection = sqlite3.connect(db_path)
+    try:
+        memory_types = {
+            row[0]
+            for row in connection.execute(
+                "SELECT DISTINCT memory_type FROM memory_items"
+            ).fetchall()
+        }
+    finally:
+        connection.close()
+
+    assert "raw" in memory_types
+    assert "profile" in memory_types
+    assert "fact" in memory_types
+    assert "event" in memory_types or "preference" in memory_types

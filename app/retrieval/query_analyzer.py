@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 
-from app.memory.extractor import content_to_text
+from app.ingestion.text_utils import content_to_text
 from app.schemas import SearchRequest
 
 
@@ -40,3 +40,4 @@ def analyze_query(request: SearchRequest) -> QueryPlan:
         query_type=query_type,
         has_options=bool(request.options),
     )
+

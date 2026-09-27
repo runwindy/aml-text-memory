@@ -8,8 +8,10 @@ from typing import Any
 class MemoryRecord:
     """One persisted memory unit returned by Search.
 
-    `content` is what the platform Answer model receives. Keep it compact,
-    self-contained, and evidence-focused.
+    Raw records keep the original evidence text. Structured records carry
+    subject/predicate/object fields and provenance so the retrieval layer can
+    support facts, events, preferences, profiles, rules, summaries and
+    relations.
     """
 
     id: str
@@ -22,3 +24,16 @@ class MemoryRecord:
     created_at: str = ""
     embedding: list[float] | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
+
+    # Structured Gold fields.
+    subject: str | None = None
+    predicate: str | None = None
+    object_value: str | None = None
+    qualifiers: dict[str, Any] = field(default_factory=dict)
+    entities: list[str] = field(default_factory=list)
+    source_message_ids: list[str] = field(default_factory=list)
+    valid_from: str | None = None
+    valid_to: str | None = None
+    confidence: float | None = None
+    importance: float | None = None
+    status: str = "active"

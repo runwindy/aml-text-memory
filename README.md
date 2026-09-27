@@ -388,3 +388,118 @@ python scripts/eval_retrieval.py \
 - 比较 reranker
 - 比较事实抽取前后
 - 比较时间治理和冲突更新效果
+
+### 挑战性评测集
+
+额外提供：
+
+```text
+examples/challenge_eval.jsonl
+```
+
+覆盖：
+
+- 当前状态 vs 历史信息
+- 多跳关系
+- 时间顺序
+- 偏好与冲突
+- 列表召回
+- 否定条件
+
+运行：
+
+```powershell
+python scripts\eval_retrieval.py --base-url http://127.0.0.1:8000 --dataset examples/challenge_eval.jsonl --top-k 20
+```
+
+输出中新增：
+
+```text
+forbidden@1
+```
+
+表示 Top-1 中是否误命中了禁止出现的旧信息或错误信息。
+
+---
+
+## 9. 企业级 Ingestion 流程
+
+Add 链路已重构为：
+
+```text
+AddService
+→ IngestionPipeline
+   → Bronze raw
+   → Normalizer
+   → Deduplicator
+   → TimeProcessor
+   → SafetyProcessor
+   → Silver messages
+   → Extractor
+   → Gold memory_items
+   → Embedding
+   → Index
+```
+
+新增模块：
+
+```text
+app/ingestion/
+├── models.py          # RawAddRequest / CanonicalMessage
+├── normalizer.py      # 非破坏性文本规范化
+├── deduplicator.py    # 精确去重标记
+├── time_processor.py  # 时间粒度识别
+├── safety.py          # PII / prompt injection 标记
+├── validator.py       # 契约校验
+└── pipeline.py        # Bronze -> Silver -> Gold 编排
+```
+
+当前 SQLite 表：
+
+```text
+add_requests        # 幂等与响应缓存
+raw_add_requests    # Bronze 原始 Add 请求
+messages            # Silver 规范消息
+memory_items        # Gold 记忆单元 + embedding
+```
+
+关键原则：
+
+- `raw_content` 原样保留，用于最终 Answer 证据
+- `normalized_content` 用于检索、去重和 BM25
+- 时间戳只统一为 UTC，不把相对时间破坏性改写
+- 同 request_id 不同 payload 返回 409 Conflict
+- `user_id` 隔离贯穿所有存储和检索
+
+---
+
+## 10. 结构化 Gold / Index / Multi-Index Retrieval
+
+已完成第一阶段到第五阶段的第一版：
+
+```text
+Stage 1 Gold 结构化记忆
+  memory_items 增加 subject / predicate / object_value / entities /
+  source_message_ids / valid_from / valid_to / confidence / importance / status
+
+Stage 2 Memory Organizer
+  app/organizer/rule_based.py
+  app/organizer/composite.py
+  抽取事实、偏好、画像字段、事件
+
+Stage 3 Index Layer
+  app/indexing/entity_index.py
+  app/indexing/time_index.py
+  app/indexing/type_index.py
+
+Stage 4 Multi-Index Retrieval
+  app/retrieval/multi_index.py
+  Dense + BM25 + Entity + Time + Memory-Type + RRF
+
+Stage 5 Profile / Event / Conflict
+  memory_type = raw / fact / event / preference / profile / rule / summary
+  app/retrieval/conflict.py 提供 current-state 冲突降权
+```
+
+当前是 deterministic 版本，还没有接入 LLM Organizer。启用 `gpt-4o-mini`
+做结构化抽取时，必须遵守开源/学术榜模型限制。
