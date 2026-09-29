@@ -1,5 +1,6 @@
 ﻿from __future__ import annotations
 
+import asyncio
 import hashlib
 import math
 import re
@@ -80,11 +81,25 @@ class OpenAICompatibleEmbeddingProvider:
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             for start in range(0, len(texts), self.batch_size):
                 batch = list(texts[start : start + self.batch_size])
-                response = await client.post(
-                    f"{self.api_base}/embeddings",
-                    headers=headers,
-                    json={"model": self.model, "input": batch},
-                )
+                response = None
+                for attempt in range(8):
+                    response = await client.post(
+                        f"{self.api_base}/embeddings",
+                        headers=headers,
+                        json={"model": self.model, "input": batch},
+                    )
+                    if response.status_code == 429 or response.status_code >= 500:
+                        retry_after = response.headers.get("Retry-After", "")
+                        try:
+                            delay = float(retry_after)
+                        except ValueError:
+                            delay = min(60.0, 2.0 ** attempt)
+                        await asyncio.sleep(max(delay, 1.0))
+                        continue
+                    response.raise_for_status()
+                    break
+                if response is None:
+                    raise RuntimeError("embedding request did not produce a response")
                 response.raise_for_status()
                 payload = response.json()
                 data = payload.get("data", [])

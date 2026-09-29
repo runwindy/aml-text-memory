@@ -16,6 +16,7 @@ def make_message(index: int, content: str) -> CanonicalMessage:
         sequence_no=index,
         role="user",
         raw_content=content,
+        raw_content_hash=f"raw-hash-{index}",
         normalized_content=content.lower(),
         content_hash=f"hash-{index}",
         timestamp_ms=1704067200000 + index * 1000,

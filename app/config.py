@@ -1,4 +1,5 @@
-﻿from functools import lru_cache
+﻿import os
+from functools import lru_cache
 from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -15,7 +16,9 @@ class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(
         env_prefix="AML_",
-        env_file=".env",
+        # Default to .env, but allow an explicit local-experiment file, e.g.
+        # AML_ENV_FILE=D:\workspace\memory\aml-text-memory\.env.deepseek
+        env_file=os.environ.get("AML_ENV_FILE", ".env"),
         env_file_encoding="utf-8",
         extra="ignore",
     )
@@ -78,6 +81,12 @@ class Settings(BaseSettings):
     graph_beam: int = 10
     graph_decay: float = 0.8
 
+    # Persistent dialogue-tree / graph expansion during Search.
+    dialogue_tree_expansion_enabled: bool = False
+    dialogue_tree_weight: float = 0.7
+    dialogue_tree_decay: float = 0.7
+    dialogue_tree_max_hops: int = 2
+
     # Optional complex-sentence decomposer.
     # off: use existing Organizer; openai: use decomposition prompt.
     decomposer_provider: str = "off"
@@ -87,6 +96,40 @@ class Settings(BaseSettings):
     decomposer_max_tokens: int = 4096
     decomposer_timeout: float = 120.0
     decomposer_concurrency: int = 4
+
+    # JEPA-inspired predictive memory layer.
+    #
+    # This is an auxiliary signal, not a replacement for text-embedding-v4.
+    # When enabled, assistant replies are treated as observed future targets;
+    # the distance between the predicted context latent and the actual
+    # assistant latent becomes a surprise / update signal.
+    predictive_memory_enabled: bool = False
+    prediction_surprise_threshold: float = 0.35
+    predictive_rerank_weight: float = 0.15
+
+    # Graph-JEPA style predicted links.  These edges are inferred from
+    # embedding similarity, entity overlap, and temporal adjacency.
+    graph_link_prediction_enabled: bool = False
+    graph_link_prediction_top_k: int = 8
+    graph_link_prediction_threshold: float = 0.55
+    graph_link_prediction_max_nodes: int = 200
+    graph_link_prediction_weight: float = 0.5
+
+    # Dialogue-JEPA style latent query expansion.  The predictor is optional;
+    # if no trained checkpoint exists, the query vector is used unchanged.
+    jepa_query_expansion_enabled: bool = False
+    jepa_model_path: str = "./data/dialogue_jepa.pt"
+    jepa_blend_weight: float = 0.5
+    jepa_query_expansion_fallback: bool = True
+    jepa_pseudo_relevance_seed_k: int = 20
+    jepa_pseudo_relevance_weight: float = 0.5
+
+    # Async Add processing.  When enabled, /add writes raw searchable records
+    # synchronously and a worker later builds structured Gold, entities, and
+    # graph edges.
+    async_processing_enabled: bool = False
+    async_worker_enabled: bool = False
+    async_worker_poll_interval: float = 1.0
 
     # Retrieval controls.
     retrieval_candidate_k: int = 200

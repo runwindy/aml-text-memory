@@ -1,6 +1,7 @@
 ﻿from __future__ import annotations
 
 import json
+import logging
 import re
 from typing import Sequence
 
@@ -10,6 +11,8 @@ from app.decomposer.prompt import BATCH_DECOMPOSITION_PROMPT, DECOMPOSITION_PROM
 from app.decomposer.schemas import BatchDecompositionResult, DecompositionResult
 from app.ingestion.models import CanonicalMessage
 from app.memory.window_extractor import DialogueWindow
+
+logger = logging.getLogger(__name__)
 
 
 def _extract_json_object(text: str) -> dict:
@@ -34,6 +37,8 @@ class LLMDecomposer:
         model: str = "gpt-4o-mini",
         max_tokens: int = 2048,
         timeout: float = 120.0,
+        provider: str = "openai",
+        disable_thinking: bool = False,
     ) -> None:
         if not api_base:
             raise ValueError("decomposer_api_base is required")
@@ -42,19 +47,28 @@ class LLMDecomposer:
         self.model = model
         self.max_tokens = max_tokens
         self.timeout = timeout
+        self.provider = provider
+        self.disable_thinking = disable_thinking
 
     async def _call_model(self, prompt: str) -> dict:
         headers = {"Authorization": f"Bearer {self.api_key}"}
+        body = {
+            "model": self.model,
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": 0,
+            "max_tokens": self.max_tokens,
+        }
+        if self.disable_thinking:
+            # DeepSeek reasoning models accept this switch.  Without it,
+            # reasoning tokens may consume the whole completion budget and
+            # leave no final JSON content.
+            body["thinking"] = {"type": "disabled"}
+
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             response = await client.post(
                 f"{self.api_base}/chat/completions",
                 headers=headers,
-                json={
-                    "model": self.model,
-                    "messages": [{"role": "user", "content": prompt}],
-                    "temperature": 0,
-                    "max_tokens": self.max_tokens,
-                },
+                json=body,
             )
             response.raise_for_status()
             payload = response.json()
@@ -91,6 +105,8 @@ class LLMDecomposer:
         try:
             payload = await self._call_model(prompt)
             batch = BatchDecompositionResult.model_validate(payload)
+            if not batch.windows:
+                logger.warning("decomposer returned zero windows for %d input windows", len(windows))
             return {
                 item.window_id: DecompositionResult(
                     propositions=item.propositions,
@@ -100,4 +116,8 @@ class LLMDecomposer:
                 for item in batch.windows
             }
         except Exception:
+            logger.warning(
+                "decomposer call failed; returning empty decomposition",
+                exc_info=True,
+            )
             return {}

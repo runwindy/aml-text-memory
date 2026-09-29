@@ -35,7 +35,11 @@ class LexicalReranker:
 
 
 class CrossEncoderReranker:
-    """Local cross-encoder reranker with GPU/VRAM guardrails."""
+    """BGE cross-encoder loaded through transformers, without scikit-learn.
+
+    This avoids sentence-transformers/sklearn DLL issues on Windows while still
+    using the GPU and fp16.
+    """
 
     def __init__(
         self,
@@ -44,40 +48,66 @@ class CrossEncoderReranker:
         batch_size: int = 8,
         max_length: int = 512,
     ) -> None:
-        from sentence_transformers import CrossEncoder
+        import torch
+        from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
+        self._torch = torch
         self.model_name = model_name
         self.batch_size = max(1, batch_size)
         self.max_length = max(64, max_length)
-        self.model = CrossEncoder(
-            model_name,
-            device=device,
-            max_length=self.max_length,
-        )
+
+        if device.startswith("cuda") and not torch.cuda.is_available():
+            device = "cpu"
+        self.device = device
+        dtype = torch.float16 if device.startswith("cuda") else torch.float32
+
+        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
+        try:
+            self.model = AutoModelForSequenceClassification.from_pretrained(
+                model_name,
+                torch_dtype=dtype,
+            )
+        except TypeError:
+            self.model = AutoModelForSequenceClassification.from_pretrained(model_name)
+        self.model.to(device)
+        self.model.eval()
         self._lock = threading.Lock()
+
+    def _predict_scores(self, pairs: list[tuple[str, str]]) -> list[float]:
+        scores: list[float] = []
+        with self._lock:
+            for start in range(0, len(pairs), self.batch_size):
+                batch = pairs[start : start + self.batch_size]
+                inputs = self.tokenizer(
+                    batch,
+                    padding=True,
+                    truncation=True,
+                    max_length=self.max_length,
+                    return_tensors="pt",
+                )
+                inputs = {key: value.to(self.device) for key, value in inputs.items()}
+                with self._torch.no_grad():
+                    logits = self.model(**inputs).logits
+                if logits.ndim == 2 and logits.shape[1] == 1:
+                    batch_scores = logits.squeeze(-1)
+                elif logits.ndim == 2 and logits.shape[1] == 2:
+                    batch_scores = logits[:, 1] - logits[:, 0]
+                else:
+                    batch_scores = logits.reshape(-1)
+                scores.extend(batch_scores.float().cpu().tolist())
+        return scores
 
     async def rerank(self, query: str, hits: Sequence[MemoryHit]) -> list[MemoryHit]:
         if not hits:
             return []
-
         pairs = [(query, hit.record.content) for hit in hits]
-
-        def run() -> list[MemoryHit]:
-            # Serialize local cross-encoder calls to avoid concurrent GPU OOM.
-            with self._lock:
-                scores = self.model.predict(
-                    pairs,
-                    batch_size=self.batch_size,
-                    show_progress_bar=False,
-                )
-            reranked = [
-                MemoryHit(record=hit.record, score=float(score))
-                for hit, score in zip(hits, scores)
-            ]
-            reranked.sort(key=lambda item: item.score, reverse=True)
-            return reranked
-
-        return await asyncio.to_thread(run)
+        scores = await asyncio.to_thread(self._predict_scores, pairs)
+        reranked = [
+            MemoryHit(record=hit.record, score=float(score))
+            for hit, score in zip(hits, scores)
+        ]
+        reranked.sort(key=lambda item: item.score, reverse=True)
+        return reranked
 
 
 def build_reranker(settings) -> Reranker:

@@ -3,6 +3,8 @@
 .venv/
 venv/
 .env
+.env.*
+!.env.*.example
 data/
 *.db
 *.db-shm
@@ -12,3 +14,5 @@ data/
 dist/
 build/
 *.egg-info/
+
+examples/longmemeval_*_eval.jsonl

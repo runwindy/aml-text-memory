@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from typing import Sequence
 
 from app.ingestion.models import CanonicalMessage
+from app.memory.assistant import assistant_metadata
 from app.memory.models import MemoryRecord
 from app.schemas import AddRequest
 
@@ -85,6 +86,12 @@ class DialogueWindow:
                 "end_timestamp_ms": self.end_timestamp_ms,
                 "source_message_ids": self.source_message_ids,
                 "normalized_content": self.render_normalized(),
+                "time_mentions": [
+                    {"message_id": message.message_id, **mention}
+                    for message in self.messages
+                    for mention in message.time_mentions
+                ],
+                **assistant_metadata(self.messages),
             },
         )
 

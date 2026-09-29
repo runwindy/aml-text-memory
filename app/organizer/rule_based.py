@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from typing import Sequence
 
 from app.ingestion.models import CanonicalMessage
+from app.memory.assistant import assistant_metadata
 from app.memory.models import MemoryRecord
 from app.schemas import AddRequest
 
@@ -128,6 +129,8 @@ class RuleBasedOrganizer:
                 "pii_flags": message.pii_flags,
                 "quality_flags": message.quality_flags,
                 "safety_flags": message.safety_flags,
+                "time_mentions": message.time_mentions,
+                **assistant_metadata([message]),
                 "ingestion_version": message.ingestion_version,
                 "organizer": "rule-based-v1",
             },

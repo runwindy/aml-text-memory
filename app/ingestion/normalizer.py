@@ -11,8 +11,9 @@ from app.ingestion.text_utils import content_to_text
 from app.schemas import AddRequest
 
 _CONTROL_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
-_ZERO_WIDTH_RE = re.compile(r"[\u200b-\u200d\u2060\ufeff]")
+_ZERO_WIDTH_RE = re.compile(r"[\u200b\u2060\ufeff]")
 _MULTISPACE_RE = re.compile(r"[ \t]+")
+_HTML_ENTITY_RE = re.compile(r"&(?:#[0-9]+|#x[0-9a-fA-F]+|[A-Za-z][A-Za-z0-9]+);")
 _CJK_RE = re.compile(r"[\u4e00-\u9fff]")
 _LATIN_RE = re.compile(r"[A-Za-z]")
 
@@ -25,8 +26,12 @@ def normalize_text(text: str) -> str:
     """
 
     text = unicodedata.normalize("NFKC", text)
-    text = html.unescape(text)
+    # Only decode HTML entities when the text actually looks entity-encoded.
+    # raw_content remains untouched, so literal code snippets are still auditable.
+    if _HTML_ENTITY_RE.search(text):
+        text = html.unescape(text)
     text = text.replace("\r\n", "\n").replace("\r", "\n")
+    # Preserve ZWJ/ZWNJ, which can be meaningful for emoji and some scripts.
     text = _ZERO_WIDTH_RE.sub("", text)
     text = _CONTROL_RE.sub("", text)
     text = _MULTISPACE_RE.sub(" ", text)
@@ -52,9 +57,14 @@ def stable_message_id(
     session_id: str,
     request_id: str,
     sequence_no: int,
-    normalized_content: str,
 ) -> str:
-    raw = f"{user_id}\x1f{session_id}\x1f{request_id}\x1f{sequence_no}\x1f{normalized_content}"
+    """Stable source identifier independent of normalization version.
+
+    The same request/sequence keeps the same message id even if NFKC, HTML
+    unescaping, or whitespace rules change later.  Content changes are caught
+    by payload_hash at the request boundary and by content hashes per view.
+    """
+    raw = f"{user_id}\x1f{session_id}\x1f{request_id}\x1f{sequence_no}"
     return "msg_" + hashlib.sha256(raw.encode("utf-8")).hexdigest()[:32]
 
 
@@ -67,6 +77,10 @@ def content_hash(
 ) -> str:
     raw = f"{user_id}\x1f{session_id}\x1f{role}\x1f{normalized_content}"
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def raw_content_hash(raw_content: str) -> str:
+    return hashlib.sha256(raw_content.encode("utf-8")).hexdigest()
 
 
 def normalize_messages(request: AddRequest) -> list[CanonicalMessage]:
@@ -92,7 +106,6 @@ def normalize_messages(request: AddRequest) -> list[CanonicalMessage]:
                     session_id=request.session_id,
                     request_id=request.request_id,
                     sequence_no=sequence_no,
-                    normalized_content=normalized,
                 ),
                 request_id=request.request_id,
                 user_id=request.user_id,
@@ -100,6 +113,7 @@ def normalize_messages(request: AddRequest) -> list[CanonicalMessage]:
                 sequence_no=sequence_no,
                 role=message.role,
                 raw_content=raw_content,
+                raw_content_hash=raw_content_hash(raw_content),
                 normalized_content=normalized,
                 content_hash=content_hash(
                     user_id=request.user_id,

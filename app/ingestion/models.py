@@ -30,12 +30,14 @@ class CanonicalMessage:
     sequence_no: int
     role: str
     raw_content: str
+    raw_content_hash: str
     normalized_content: str
     content_hash: str
     timestamp_ms: int | None
     timestamp_inferred: bool
     time_granularity: str | None
-    language: str
+    time_mentions: list[dict[str, Any]] = field(default_factory=list)
+    language: str = "unknown"
     pii_flags: list[str] = field(default_factory=list)
     quality_flags: list[str] = field(default_factory=list)
     safety_flags: list[str] = field(default_factory=list)

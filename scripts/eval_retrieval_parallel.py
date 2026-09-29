@@ -55,12 +55,41 @@ def process_group(
 
     sessions = case.get("sessions", [])
     if sessions:
+        # LongMemEval-derived data can contain repeated raw session ids within
+        # one question.  Keep the first occurrence stable for resume, but
+        # suffix later occurrences so request_id remains unique.
+        seen_session_ids: set[str] = set()
+        normalized_sessions: list[dict[str, Any]] = []
+        for index, session in enumerate(sessions):
+            normalized_session = dict(session)
+            session_id = str(normalized_session.get("session_id", f"session-{index}"))
+            if session_id in seen_session_ids:
+                session_id = f"{session_id}:dup{index}"
+            seen_session_ids.add(session_id)
+            normalized_session["session_id"] = session_id
+            normalized_sessions.append(normalized_session)
+
         def add_one(session: dict[str, Any]) -> None:
             with httpx.Client(base_url=base_url, headers=headers, timeout=180.0) as client:
                 add_session(client, case_id=case_id, user_id=user_id, session=session)
 
         with ThreadPoolExecutor(max_workers=workers) as executor:
-            list(executor.map(add_one, sessions))
+            list(executor.map(add_one, normalized_sessions))
+
+    # LongMemEval-style JSONL stores one question at the top level, while
+    # LoCoMo-style JSONL stores a `questions` list.  Support both formats.
+    questions = case.get("questions")
+    if not questions and "question" in case:
+        questions = [
+            {
+                "id": case.get("id"),
+                "question": case.get("question"),
+                "options": case.get("options"),
+                "expected_keywords": case.get("expected_keywords", []),
+                "forbidden_keywords": case.get("forbidden_keywords", []),
+            }
+        ]
+    questions = questions or []
 
     rows: list[dict[str, Any]] = []
     with ThreadPoolExecutor(max_workers=workers) as executor:
@@ -73,7 +102,7 @@ def process_group(
                 question=question,
                 top_k=top_k,
             ): question
-            for question in case.get("questions", [])
+            for question in questions
         }
         for future in as_completed(futures):
             row = future.result()
@@ -93,11 +122,12 @@ def main() -> None:
     args = parser.parse_args()
 
     dataset_path = Path(args.dataset)
-    cases = [
-        json.loads(line)
-        for line in dataset_path.read_text(encoding="utf-8-sig").splitlines()
-        if line.strip()
-    ]
+    with dataset_path.open("r", encoding="utf-8-sig") as handle:
+        cases = [
+            json.loads(line)
+            for line in handle
+            if line.strip()
+        ]
     headers = auth_headers(args.key)
 
     rows: list[dict[str, Any]] = []

@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import logging
 import re
 from datetime import datetime, timezone
 from typing import Sequence
@@ -9,9 +10,12 @@ from typing import Sequence
 import httpx
 
 from app.ingestion.models import CanonicalMessage
+from app.memory.assistant import assistant_metadata
 from app.memory.models import MemoryRecord
 from app.organizer.rule_based import RuleBasedOrganizer
 from app.schemas import AddRequest
+
+logger = logging.getLogger(__name__)
 
 _EXTRACT_PROMPT = """You are a memory organizer for a long-term Agent Memory system.
 
@@ -64,6 +68,8 @@ class LLMOrganizer:
         model: str = "gpt-4o-mini",
         max_tokens: int = 1024,
         timeout: float = 120.0,
+        provider: str = "openai",
+        disable_thinking: bool = False,
     ) -> None:
         if not api_base:
             raise ValueError("organizer_api_base is required")
@@ -72,20 +78,26 @@ class LLMOrganizer:
         self.model = model
         self.max_tokens = max_tokens
         self.timeout = timeout
+        self.provider = provider
+        self.disable_thinking = disable_thinking
         self.fallback = RuleBasedOrganizer()
 
     async def _call_model(self, prompt: str) -> dict:
         headers = {"Authorization": f"Bearer {self.api_key}"}
+        body = {
+            "model": self.model,
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": 0,
+            "max_tokens": self.max_tokens,
+        }
+        if self.disable_thinking:
+            body["thinking"] = {"type": "disabled"}
+
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             response = await client.post(
                 f"{self.api_base}/chat/completions",
                 headers=headers,
-                json={
-                    "model": self.model,
-                    "messages": [{"role": "user", "content": prompt}],
-                    "temperature": 0,
-                    "max_tokens": self.max_tokens,
-                },
+                json=body,
             )
             response.raise_for_status()
             payload = response.json()
@@ -150,11 +162,14 @@ class LLMOrganizer:
             status="active",
             metadata={
                 "organizer": "llm",
+                "provider": self.provider,
                 "model_name": self.model,
                 "source_message_ids": [message.message_id],
                 "pii_flags": message.pii_flags,
                 "quality_flags": message.quality_flags,
                 "safety_flags": message.safety_flags,
+                "time_mentions": message.time_mentions,
+                **assistant_metadata([message]),
                 "ingestion_version": message.ingestion_version,
             },
         )
@@ -190,4 +205,8 @@ class LLMOrganizer:
                 )
             return records
         except Exception:
+            logger.warning(
+                "LLM organizer failed; falling back to rule-based organizer",
+                exc_info=True,
+            )
             return await self.fallback.extract(request, messages)

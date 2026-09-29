@@ -247,3 +247,100 @@ def test_dialogue_window_extraction(tmp_path):
 
     assert count == 2
 
+def test_time_granularity_date_is_day():
+    from app.ingestion.time_processor import extract_time_mentions, infer_granularity
+
+    assert infer_granularity("The event was on 2025-03-04.") == "day"
+    assert infer_granularity("The event was at 10:30.") == "minute"
+    assert infer_granularity("It happened in March.") == "month"
+    assert infer_granularity("It happened in 2025.") == "year"
+
+    mentions = extract_time_mentions("Moved in 2024-06-01 and again in 2025.")
+    assert [mention["granularity"] for mention in mentions] == ["day", "year"]
+
+
+def test_stable_message_id_does_not_depend_on_normalizer():
+    from app.ingestion.normalizer import stable_message_id
+
+    first = stable_message_id(
+        user_id="u1",
+        session_id="s1",
+        request_id="r1",
+        sequence_no=0,
+    )
+    second = stable_message_id(
+        user_id="u1",
+        session_id="s1",
+        request_id="r1",
+        sequence_no=0,
+    )
+    other = stable_message_id(
+        user_id="u1",
+        session_id="s1",
+        request_id="r2",
+        sequence_no=0,
+    )
+    assert first == second
+    assert first != other
+
+
+def test_repeated_evidence_survives_gold_extraction(tmp_path):
+    import sqlite3
+
+    db_path = tmp_path / "repeat.db"
+    client = TestClient(
+        create_app(
+            Settings(
+                database_path=str(db_path),
+                auth_mode="none",
+                embedding_provider="hashing",
+                embedding_dim=128,
+                organizer_provider="rule",
+                decomposer_provider="off",
+                window_size=1,
+                window_overlap=0,
+            )
+        )
+    )
+    with client:
+        response = client.post(
+            "/add",
+            json={
+                "request_id": "repeat-request-1",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": "I live in Shanghai.",
+                        "timestamp": 1704067200000,
+                    },
+                    {
+                        "role": "user",
+                        "content": "I live in Shanghai.",
+                        "timestamp": 1704067260000,
+                    },
+                ],
+                "user_id": "repeat-user",
+                "session_id": "repeat-session",
+            },
+        )
+        assert response.status_code == 200
+
+    connection = sqlite3.connect(db_path)
+    try:
+        raw_count = connection.execute(
+            "SELECT COUNT(*) FROM memory_items WHERE memory_type = 'raw'"
+        ).fetchone()[0]
+        status = connection.execute(
+            "SELECT status FROM add_requests WHERE request_id = ?",
+            ("repeat-request-1",),
+        ).fetchone()[0]
+        raw_exists = connection.execute(
+            "SELECT COUNT(*) FROM raw_add_requests WHERE request_id = ?",
+            ("repeat-request-1",),
+        ).fetchone()[0]
+    finally:
+        connection.close()
+
+    assert raw_count == 2
+    assert status == "succeeded"
+    assert raw_exists == 1

@@ -12,11 +12,19 @@ def deduplicate(messages: list[CanonicalMessage]) -> list[CanonicalMessage]:
     exact duplicates so Gold extraction can skip them.
     """
 
-    seen: set[tuple[str, str, str, str]] = set()
+    seen: set[tuple[str, str, str, str, int | None]] = set()
     result: list[CanonicalMessage] = []
 
     for message in messages:
-        key = (message.user_id, message.session_id, message.role, message.content_hash)
+        # Include timestamp so repeated wording at different moments is treated
+        # as separate evidence rather than transport-level duplication.
+        key = (
+            message.user_id,
+            message.session_id,
+            message.role,
+            message.content_hash,
+            message.timestamp_ms,
+        )
         if key in seen:
             result.append(
                 replace(

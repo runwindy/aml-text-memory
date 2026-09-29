@@ -1,6 +1,7 @@
 ﻿from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 from typing import Any
 
@@ -11,11 +12,12 @@ from app.eval.metrics import average_metrics, evaluate_keyword_retrieval
 
 def load_jsonl(path: str | Path) -> list[dict[str, Any]]:
     file = Path(path)
-    return [
-        json.loads(line)
-        for line in file.read_text(encoding="utf-8-sig").splitlines()
-        if line.strip()
-    ]
+    with file.open("r", encoding="utf-8-sig") as handle:
+        return [
+            json.loads(line)
+            for line in handle
+            if line.strip()
+        ]
 
 
 def auth_headers(key: str | None) -> dict[str, str]:
@@ -37,8 +39,34 @@ def add_session(
         "user_id": user_id,
         "session_id": session["session_id"],
     }
-    response = client.post("/add", json=payload)
-    response.raise_for_status()
+
+    retryable = {408, 409, 425, 429, 500, 502, 503, 504, 524}
+    last_transport_error: Exception | None = None
+    for attempt in range(1, 6):
+        try:
+            response = client.post("/add", json=payload)
+        except httpx.TransportError as exc:
+            last_transport_error = exc
+            if attempt >= 5:
+                raise
+            time.sleep(min(60.0, 2.0 ** attempt))
+            continue
+
+        if response.status_code in retryable and attempt < 5:
+            retry_after = response.headers.get("Retry-After")
+            try:
+                delay = float(retry_after) if retry_after else 2.0 ** attempt
+            except ValueError:
+                delay = 2.0 ** attempt
+            time.sleep(min(60.0, max(1.0, delay)))
+            continue
+
+        response.raise_for_status()
+        return
+
+    if last_transport_error is not None:
+        raise last_transport_error
+    raise RuntimeError("add_session retry loop exhausted")
 
 
 def search_case(
@@ -56,9 +84,34 @@ def search_case(
     }
     if options:
         payload["options"] = options
-    response = client.post("/search", json=payload)
-    response.raise_for_status()
-    return response.json()["data"]
+
+    retryable = {408, 425, 429, 500, 502, 503, 504, 524}
+    last_transport_error: Exception | None = None
+    for attempt in range(1, 5):
+        try:
+            response = client.post("/search", json=payload)
+        except httpx.TransportError as exc:
+            last_transport_error = exc
+            if attempt >= 4:
+                raise
+            time.sleep(min(60.0, 2.0 ** attempt))
+            continue
+
+        if response.status_code in retryable and attempt < 4:
+            retry_after = response.headers.get("Retry-After")
+            try:
+                delay = float(retry_after) if retry_after else 2.0 ** attempt
+            except ValueError:
+                delay = 2.0 ** attempt
+            time.sleep(min(60.0, max(1.0, delay)))
+            continue
+
+        response.raise_for_status()
+        return response.json()["data"]
+
+    if last_transport_error is not None:
+        raise last_transport_error
+    raise RuntimeError("search_case retry loop exhausted")
 
 
 def evaluate_question(

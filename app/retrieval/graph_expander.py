@@ -22,6 +22,7 @@ def _edge_weight(record: MemoryRecord, keywords: QueryKeywords) -> float:
 def _build_adjacency(
     records: list[MemoryRecord],
     keywords: QueryKeywords,
+    predicted_edges: dict[str, list[tuple[str, float]]] | None = None,
 ) -> dict[str, list[tuple[str, MemoryRecord | None, float]]]:
     adjacency: dict[str, list[tuple[str, MemoryRecord | None, float]]] = defaultdict(list)
 
@@ -64,6 +65,13 @@ def _build_adjacency(
                 adjacency[source_id].append((target_id, None, 0.25))
                 adjacency[target_id].append((source_id, None, 0.25))
 
+    # Graph-JEPA predicted links are merged as implicit edges.  They let the
+    # beam search cross session boundaries even when no explicit relation
+    # record was extracted.
+    for source_id, edges in (predicted_edges or {}).items():
+        for target_id, edge_weight in edges:
+            adjacency[source_id].append((target_id, None, edge_weight))
+
     return adjacency
 
 
@@ -75,11 +83,13 @@ def expand_graph(
     max_hops: int = 2,
     beam: int = 10,
     decay: float = 0.8,
+    predicted_edges: dict[str, list[tuple[str, float]]] | None = None,
 ) -> dict[str, float]:
-    """Beam-search over relation records and entity co-occurrence edges."""
+    """Beam-search over explicit relations, entity co-occurrence, and
+    Graph-JEPA predicted edges."""
 
     by_id = {record.id: record for record in records}
-    adjacency = _build_adjacency(records, keywords)
+    adjacency = _build_adjacency(records, keywords, predicted_edges)
 
     scores: dict[str, float] = {}
     frontier: list[tuple[float, int, str, float]] = []
