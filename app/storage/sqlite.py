@@ -1243,6 +1243,70 @@ class SQLiteMemoryStore:
         finally:
             connection.close()
 
+    def _fetch_entity_nodes_sync(self, user_id: str) -> list[dict]:
+        connection = self._connect()
+        try:
+            rows = connection.execute(
+                """
+                SELECT entity_id, user_id, canonical_name, aliases_json,
+                       entity_type, confidence, metadata_json, created_at, updated_at
+                FROM entity_nodes
+                WHERE user_id = ?
+                ORDER BY canonical_name
+                """,
+                (user_id,),
+            ).fetchall()
+            result: list[dict] = []
+            for row in rows:
+                item = dict(row)
+                item["aliases"] = json.loads(row["aliases_json"]) if row["aliases_json"] else []
+                item["metadata"] = json.loads(row["metadata_json"]) if row["metadata_json"] else {}
+                result.append(item)
+            return result
+        finally:
+            connection.close()
+
+    def _fetch_entity_edges_sync(self, user_id: str) -> list[dict]:
+        connection = self._connect()
+        try:
+            rows = connection.execute(
+                """
+                SELECT edge_id, user_id, source_entity_id, target_entity_id,
+                       edge_type, confidence, valid_from, valid_to,
+                       evidence_ids_json, metadata_json, created_at
+                FROM entity_edges
+                WHERE user_id = ?
+                ORDER BY created_at
+                """,
+                (user_id,),
+            ).fetchall()
+            result: list[dict] = []
+            for row in rows:
+                item = dict(row)
+                item["evidence_ids"] = json.loads(row["evidence_ids_json"]) if row["evidence_ids_json"] else []
+                item["metadata"] = json.loads(row["metadata_json"]) if row["metadata_json"] else {}
+                result.append(item)
+            return result
+        finally:
+            connection.close()
+
+    def _fetch_memory_entity_links_sync(self, user_id: str) -> list[dict]:
+        connection = self._connect()
+        try:
+            rows = connection.execute(
+                """
+                SELECT l.memory_id, l.entity_id, l.role, l.confidence
+                FROM memory_entity_links l
+                JOIN entity_nodes e ON e.entity_id = l.entity_id
+                WHERE e.user_id = ?
+                ORDER BY l.memory_id
+                """,
+                (user_id,),
+            ).fetchall()
+            return [dict(row) for row in rows]
+        finally:
+            connection.close()
+
     def _fetch_for_user_sync(self, user_id: str, limit: int | None) -> list[MemoryRecord]:
         connection = self._connect()
         try:
@@ -1402,6 +1466,15 @@ class SQLiteMemoryStore:
 
     async def fetch_memory_edges(self, user_id: str) -> list[dict]:
         return await asyncio.to_thread(self._fetch_memory_edges_sync, user_id)
+
+    async def fetch_entity_nodes(self, user_id: str) -> list[dict]:
+        return await asyncio.to_thread(self._fetch_entity_nodes_sync, user_id)
+
+    async def fetch_entity_edges(self, user_id: str) -> list[dict]:
+        return await asyncio.to_thread(self._fetch_entity_edges_sync, user_id)
+
+    async def fetch_memory_entity_links(self, user_id: str) -> list[dict]:
+        return await asyncio.to_thread(self._fetch_memory_entity_links_sync, user_id)
 
     async def save_raw_ready_result(
         self,

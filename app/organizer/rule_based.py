@@ -133,6 +133,7 @@ class RuleBasedOrganizer:
                 **assistant_metadata([message]),
                 "ingestion_version": message.ingestion_version,
                 "organizer": "rule-based-v1",
+                "granularity": "atomic",
             },
         )
 

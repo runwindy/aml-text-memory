@@ -926,3 +926,82 @@ dirty_entities
 
 dirty set 会在新实体写入时产生，并在异步任务完成后标记 processed。
 
+## 17. 多粒度记忆与实体图检索
+
+### 多粒度记忆
+
+Add 阶段现在可以生成三种粒度：
+
+```text
+atomic：
+    proposition / event / preference / profile / rule
+
+window：
+    DialogueWindow
+
+session：
+    extractive session summary
+```
+
+代码：
+
+```text
+app/memory/multigranularity.py
+    build_session_summaries()
+```
+
+检索时使用：
+
+```text
+app/retrieval/granularity.py
+    granularity_scores()
+```
+
+偏好：
+
+- 事实类查询优先 atomic / message 节点；
+- 多 session / 时间类查询提高 session summary 权重。
+
+配置：
+
+```env
+AML_MULTI_GRANULARITY_ENABLED=true
+AML_SESSION_SUMMARY_MAX_CHARS=4000
+```
+
+### 实体图检索
+
+新增：
+
+```text
+app/retrieval/entity_graph.py
+```
+
+读取：
+
+```text
+entity_nodes
+entity_edges
+memory_entity_links
+```
+
+通过 query 匹配实体、扩展实体边、映射回 memory_items，作为额外
+RRF 分支参与检索。
+
+配置：
+
+```env
+AML_ENTITY_GRAPH_EXPANSION_ENABLED=true
+AML_ENTITY_GRAPH_MAX_HOPS=1
+AML_ENTITY_GRAPH_WEIGHT=0.6
+AML_ENTITY_GRAPH_SEED_K=10
+```
+
+这样 Search 的候选来源变成：
+
+```text
+Dense + BM25 + EntityIndex + Time + Type + Temporal
++ Structured + Graph + DialogueTree
++ EntityGraph + JEPA
+```
+

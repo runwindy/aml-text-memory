@@ -162,6 +162,7 @@ class LLMOrganizer:
             status="active",
             metadata={
                 "organizer": "llm",
+                "granularity": "atomic",
                 "provider": self.provider,
                 "model_name": self.model,
                 "source_message_ids": [message.message_id],

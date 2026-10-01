@@ -131,6 +131,23 @@ class Settings(BaseSettings):
     async_worker_enabled: bool = False
     async_worker_poll_interval: float = 1.0
 
+    # Multi-granularity memory.
+    # atomic: proposition / event / preference / message
+    # window: dialogue window
+    # session: extractive session summary
+    multi_granularity_enabled: bool = True
+    session_summary_max_chars: int = 4000
+    granularity_atomic_weight: float = 1.0
+    granularity_window_weight: float = 0.7
+    granularity_session_weight: float = 0.6
+    granularity_multi_session_weight: float = 0.9
+
+    # Persistent entity graph retrieval.
+    entity_graph_expansion_enabled: bool = False
+    entity_graph_max_hops: int = 1
+    entity_graph_weight: float = 0.6
+    entity_graph_seed_k: int = 10
+
     # Retrieval controls.
     retrieval_candidate_k: int = 200
     retrieval_dense_k: int = 100

@@ -78,6 +78,7 @@ class DialogueWindow:
             created_at=self.messages[0].created_at,
             metadata={
                 "chunk_type": "dialogue_window",
+                "granularity": "window",
                 "window_ordinal": self.ordinal,
                 "window_size": len(self.messages),
                 "start_sequence_no": self.start_sequence_no,

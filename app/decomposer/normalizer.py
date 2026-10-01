@@ -86,6 +86,7 @@ def _base_metadata(
 ) -> dict:
     metadata = {
         "decomposer": "llm-decomposer-v1",
+        "granularity": "atomic",
         "source_message_ids": list(source_message_ids),
         "source_message_indices": list(source_message_indices or []),
         "window_id": window.window_id,

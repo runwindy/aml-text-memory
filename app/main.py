@@ -76,6 +76,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         dialogue_tree_weight=settings.dialogue_tree_weight,
         dialogue_tree_decay=settings.dialogue_tree_decay,
         dialogue_tree_max_hops=settings.dialogue_tree_max_hops,
+        multi_granularity_enabled=settings.multi_granularity_enabled,
+        granularity_atomic_weight=settings.granularity_atomic_weight,
+        granularity_window_weight=settings.granularity_window_weight,
+        granularity_session_weight=settings.granularity_session_weight,
+        granularity_multi_session_weight=settings.granularity_multi_session_weight,
+        entity_graph_expansion_enabled=settings.entity_graph_expansion_enabled,
+        entity_graph_max_hops=settings.entity_graph_max_hops,
+        entity_graph_weight=settings.entity_graph_weight,
+        entity_graph_seed_k=settings.entity_graph_seed_k,
     )
     reranker = build_reranker(settings)
     packer = EvidencePacker(settings)

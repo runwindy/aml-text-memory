@@ -91,6 +91,7 @@ class PassThroughExtractor:
                     created_at=message.created_at,
                     metadata={
                         "source_message_ids": [message.message_id],
+                        "granularity": "message",
                         "normalized_content": message.normalized_content,
                         "language": message.language,
                         "time_granularity": message.time_granularity,

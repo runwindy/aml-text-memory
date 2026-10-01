@@ -11,7 +11,9 @@ from app.retrieval.conflict import apply_current_state_bias
 from app.retrieval.embedding import EmbeddingProvider
 from app.retrieval.dialogue_graph import build_tree_graph_scores
 from app.retrieval.graph_expander import expand_graph
+from app.retrieval.entity_graph import entity_graph_scores
 from app.retrieval.graph_jepa import build_predicted_adjacency
+from app.retrieval.granularity import granularity_scores
 from app.retrieval.hybrid import MemoryHit, bm25_scores, cosine_similarity
 from app.retrieval.query_analyzer import QueryPlan
 from app.retrieval.query_keywords import extract_query_keywords
@@ -51,6 +53,15 @@ class MultiIndexRetriever:
         dialogue_tree_weight: float = 0.7,
         dialogue_tree_decay: float = 0.7,
         dialogue_tree_max_hops: int = 2,
+        multi_granularity_enabled: bool = True,
+        granularity_atomic_weight: float = 1.0,
+        granularity_window_weight: float = 0.7,
+        granularity_session_weight: float = 0.6,
+        granularity_multi_session_weight: float = 0.9,
+        entity_graph_expansion_enabled: bool = False,
+        entity_graph_max_hops: int = 1,
+        entity_graph_weight: float = 0.6,
+        entity_graph_seed_k: int = 10,
     ) -> None:
         self.store = store
         self.embedder = embedder
@@ -77,6 +88,15 @@ class MultiIndexRetriever:
         self.dialogue_tree_weight = dialogue_tree_weight
         self.dialogue_tree_decay = dialogue_tree_decay
         self.dialogue_tree_max_hops = dialogue_tree_max_hops
+        self.multi_granularity_enabled = multi_granularity_enabled
+        self.granularity_atomic_weight = granularity_atomic_weight
+        self.granularity_window_weight = granularity_window_weight
+        self.granularity_session_weight = granularity_session_weight
+        self.granularity_multi_session_weight = granularity_multi_session_weight
+        self.entity_graph_expansion_enabled = entity_graph_expansion_enabled
+        self.entity_graph_max_hops = entity_graph_max_hops
+        self.entity_graph_weight = entity_graph_weight
+        self.entity_graph_seed_k = entity_graph_seed_k
 
     async def retrieve(
         self,
@@ -91,9 +111,16 @@ class MultiIndexRetriever:
 
         dialogue_nodes: list[dict] = []
         memory_edges: list[dict] = []
+        entity_nodes: list[dict] = []
+        entity_edges: list[dict] = []
+        memory_entity_links: list[dict] = []
         if self.dialogue_tree_expansion_enabled:
             dialogue_nodes = await self.store.fetch_dialogue_nodes(user_id)
             memory_edges = await self.store.fetch_memory_edges(user_id)
+        if self.entity_graph_expansion_enabled:
+            entity_nodes = await self.store.fetch_entity_nodes(user_id)
+            entity_edges = await self.store.fetch_entity_edges(user_id)
+            memory_entity_links = await self.store.fetch_memory_entity_links(user_id)
 
         by_id = {record.id: record for record in records}
         fused: dict[str, float] = defaultdict(float)
@@ -145,9 +172,35 @@ class MultiIndexRetriever:
         kind_scores = type_scores(records, plan.query_text)
         add_ranking(kind_scores, 0.5)
 
+        # Multi-granularity bias: atomic nodes are preferred for direct
+        # questions; session summaries are preferred for broad questions.
+        if self.multi_granularity_enabled:
+            grain_scores = granularity_scores(
+                records,
+                plan,
+                atomic_weight=self.granularity_atomic_weight,
+                window_weight=self.granularity_window_weight,
+                session_weight=self.granularity_session_weight,
+                multi_session_weight=self.granularity_multi_session_weight,
+            )
+            add_ranking(grain_scores, 0.5)
+
         # Explicit temporal resolver.
         temporal_resolver_scores = temporal_scores(records, plan.query_text)
         add_ranking(temporal_resolver_scores, 0.6)
+
+        # Persistent entity-graph retrieval.
+        if self.entity_graph_expansion_enabled and entity_nodes:
+            entity_scores = entity_graph_scores(
+                records=records,
+                query_text=plan.query_text,
+                entity_nodes=entity_nodes,
+                entity_edges=entity_edges,
+                memory_entity_links=memory_entity_links,
+                max_hops=self.entity_graph_max_hops,
+                seed_k=self.entity_graph_seed_k,
+            )
+            add_ranking(entity_scores, self.entity_graph_weight)
 
         # Keyword-driven structured retrieval.
         keywords = extract_query_keywords(plan.query_text + "\n" + plan.retrieval_text)

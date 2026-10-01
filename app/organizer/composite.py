@@ -9,6 +9,7 @@ from app.decomposer.graph_builder import build_memory_records
 from app.decomposer.llm_decomposer import LLMDecomposer
 from app.ingestion.models import CanonicalMessage
 from app.memory.models import MemoryRecord
+from app.memory.multigranularity import build_session_summaries
 from app.memory.window_extractor import DialogueWindowExtractor
 from app.organizer.llm import LLMOrganizer
 from app.organizer.rule_based import RuleBasedOrganizer
@@ -124,6 +125,8 @@ class CompositeExtractor:
         self.organizer = build_organizer(settings)
         self.decomposer = build_decomposer(settings)
         self.decomposer_concurrency = max(1, settings.decomposer_concurrency)
+        self.multi_granularity_enabled = settings.multi_granularity_enabled
+        self.session_summary_max_chars = settings.session_summary_max_chars
 
     def raw_records(
         self,
@@ -166,7 +169,15 @@ class CompositeExtractor:
                 window_records = await self.organizer.extract(request, window.messages)
                 structured_records.extend(window_records)
 
-        return raw_records + _dedupe_structured(structured_records)
+        summary_records: list[MemoryRecord] = []
+        if self.multi_granularity_enabled and messages:
+            summary_records = build_session_summaries(
+                request=request,
+                messages=messages,
+                max_chars=self.session_summary_max_chars,
+            )
+
+        return raw_records + _dedupe_structured(structured_records) + summary_records
 
     async def _decompose_windows(self, windows):
         """Split large window sets into bounded concurrent LLM batches."""
